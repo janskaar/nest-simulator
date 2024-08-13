@@ -73,11 +73,13 @@ RecordablesMap< iaf_bw_2001 >::create()
   insert_( names::s_AMPA, &iaf_bw_2001::get_ode_state_elem_< iaf_bw_2001::State_::s_AMPA > );
   insert_( names::s_GABA, &iaf_bw_2001::get_ode_state_elem_< iaf_bw_2001::State_::s_GABA > );
   insert_( names::s_NMDA, &iaf_bw_2001::get_ode_state_elem_< iaf_bw_2001::State_::s_NMDA > );
+  insert_( names::s_NMDA_pre, &iaf_bw_2001::get_s_NMDA_pre_ );
   insert_( names::I_NMDA, &iaf_bw_2001::get_I_NMDA_ );
   insert_( names::I_AMPA, &iaf_bw_2001::get_I_AMPA_ );
   insert_( names::I_GABA, &iaf_bw_2001::get_I_GABA_ );
 }
 }
+
 
 extern "C" inline int
 nest::iaf_bw_2001_dynamics( double, const double y[], double f[], void* pnode )
@@ -92,6 +94,8 @@ nest::iaf_bw_2001_dynamics( double, const double y[], double f[], void* pnode )
   // y[] here is---and must be---the state vector supplied by the integrator,
   // not the state vector in the node, node.S_.y[].
 
+//   node.S_.s_NMDA_ = node.P_.s_NMDA_clamp ? node.P_.s_NMDA_post_clamp_value : y[ S::s_NMDA ];
+
   node.S_.I_AMPA_ = ( y[ S::V_m ] - node.P_.E_ex ) * y[ S::s_AMPA ];
   node.S_.I_GABA_ = ( y[ S::V_m ] - node.P_.E_in ) * y[ S::s_GABA ];
 
@@ -104,6 +108,7 @@ nest::iaf_bw_2001_dynamics( double, const double y[], double f[], void* pnode )
 
   f[ S::s_AMPA ] = -y[ S::s_AMPA ] / node.P_.tau_AMPA;
   f[ S::s_NMDA ] = -y[ S::s_NMDA ] / node.P_.tau_decay_NMDA;
+ // f[ S::s_NMDA ] = node.P_.s_NMDA_clamp ? 0 : -y[ S::s_NMDA ] / node.P_.tau_decay_NMDA;
   f[ S::s_GABA ] = -y[ S::s_GABA ] / node.P_.tau_GABA;
 
   return GSL_SUCCESS;
@@ -130,6 +135,9 @@ nest::iaf_bw_2001::Parameters_::Parameters_()
   , alpha( 0.5 )          // 1 / ms
   , conc_Mg2( 1 )         // mM
   , gsl_error_tol( 1e-3 )
+  , s_NMDA_clamp( false )
+  , s_NMDA_pre_clamp_value( 0 )
+  , s_NMDA_post_clamp_value( 0 )
 {
 }
 
@@ -141,6 +149,7 @@ nest::iaf_bw_2001::State_::State_( const Parameters_& p )
   y_[ s_GABA ] = 0.0;
   y_[ s_NMDA ] = 0.0;
   s_NMDA_pre = 0.0;
+//  s_NMDA_ = 0.0;
   I_NMDA_ = 0.0;
   I_AMPA_ = 0.0;
   I_GABA_ = 0.0;
@@ -154,6 +163,7 @@ nest::iaf_bw_2001::State_::State_( const State_& s )
   y_[ s_GABA ] = s.y_[ s_GABA ];
   y_[ s_NMDA ] = s.y_[ s_NMDA ];
   s_NMDA_pre = s.s_NMDA_pre;
+//  s_NMDA_ = s.s_NMDA_;
   I_NMDA_ = s.I_NMDA_;
   I_AMPA_ = s.I_AMPA_;
   I_GABA_ = s.I_GABA_;
@@ -202,6 +212,9 @@ nest::iaf_bw_2001::Parameters_::get( DictionaryDatum& d ) const
   def< double >( d, names::alpha, alpha );
   def< double >( d, names::conc_Mg2, conc_Mg2 );
   def< double >( d, names::gsl_error_tol, gsl_error_tol );
+  def< bool >( d, names::s_NMDA_clamp, s_NMDA_clamp );
+  def< double >( d, names::s_NMDA_pre_clamp_value, s_NMDA_pre_clamp_value );
+  def< double >( d, names::s_NMDA_post_clamp_value, s_NMDA_post_clamp_value );
 }
 
 void
@@ -223,6 +236,9 @@ nest::iaf_bw_2001::Parameters_::set( const DictionaryDatum& d, Node* node )
   updateValueParam< double >( d, names::alpha, alpha, node );
   updateValueParam< double >( d, names::conc_Mg2, conc_Mg2, node );
   updateValueParam< double >( d, names::gsl_error_tol, gsl_error_tol, node );
+  updateValueParam< bool >( d, names::s_NMDA_clamp, s_NMDA_clamp, node );
+  updateValueParam< double >( d, names::s_NMDA_pre_clamp_value, s_NMDA_pre_clamp_value, node );
+  updateValueParam< double >( d, names::s_NMDA_post_clamp_value, s_NMDA_post_clamp_value, node );
 
   if ( V_reset >= V_th )
   {
@@ -261,6 +277,7 @@ nest::iaf_bw_2001::State_::get( DictionaryDatum& d ) const
   def< double >( d, names::s_AMPA, y_[ s_AMPA ] );
   def< double >( d, names::s_GABA, y_[ s_GABA ] );
   def< double >( d, names::s_NMDA, y_[ s_NMDA ] );
+  def< double >( d, names::s_NMDA_pre, s_NMDA_pre );
   def< double >( d, names::I_NMDA, I_NMDA_ );
   def< double >( d, names::I_AMPA, I_AMPA_ );
   def< double >( d, names::I_GABA, I_GABA_ );
@@ -274,6 +291,7 @@ nest::iaf_bw_2001::State_::set( const DictionaryDatum& d, const Parameters_&, No
   updateValueParam< double >( d, names::s_GABA, y_[ s_GABA ], node );
   updateValueParam< double >( d, names::s_NMDA, y_[ s_NMDA ], node );
 }
+
 
 /* ---------------------------------------------------------------------------
  * Default constructor for node
@@ -448,6 +466,10 @@ nest::iaf_bw_2001::update( Time const& origin, const long from, const long to )
     S_.y_[ State_::s_GABA ] += B_.spikes_[ SynapseTypes::GABA - 1 ].get_value( lag );
     S_.y_[ State_::s_NMDA ] += B_.spikes_[ SynapseTypes::NMDA - 1 ].get_value( lag );
 
+    if ( P_.s_NMDA_clamp )
+    {
+        S_.y_[ State_::s_NMDA ] = P_.s_NMDA_post_clamp_value;
+    }
     if ( S_.r_ )
     {
       // neuron is absolute refractory
@@ -469,9 +491,17 @@ nest::iaf_bw_2001::update( Time const& origin, const long from, const long to )
       const double t_spike = get_spiketime_ms();
 
       // compute current value of s_NMDA and add NMDA update to spike offset
-      S_.s_NMDA_pre = S_.s_NMDA_pre * exp( -( t_spike - t_lastspike ) / P_.tau_decay_NMDA );
-      const double s_NMDA_delta = V_.k_0 + V_.k_1 * S_.s_NMDA_pre;
-      S_.s_NMDA_pre += s_NMDA_delta;
+      double s_NMDA_delta = 0.0;
+      if ( P_.s_NMDA_clamp )
+      {
+          S_.s_NMDA_pre = P_.s_NMDA_pre_clamp_value;
+      }
+      else
+      {
+          S_.s_NMDA_pre = S_.s_NMDA_pre * exp( -( t_spike - t_lastspike ) / P_.tau_decay_NMDA );
+          s_NMDA_delta = V_.k_0 + V_.k_1 * S_.s_NMDA_pre;
+          S_.s_NMDA_pre += s_NMDA_delta;
+      }
 
       SpikeEvent se;
       se.set_offset( s_NMDA_delta );
