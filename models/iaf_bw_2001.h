@@ -281,9 +281,7 @@ private:
     double conc_Mg2;       //!< Extracellular Magnesium Concentration in mM
 
     double gsl_error_tol; //!< GSL Error Tolerance
-    bool s_NMDA_clamp;     // Clamp s_NMDA variable?
-    double s_NMDA_pre_clamp_value;  // Value to clamp pre-synaptic variable to
-    double s_NMDA_post_clamp_value; // Value to clamp post-synaptic summed variable to
+    double s_NMDA_post_current; // Value to add to post-synaptic summed variable to
 
     //! Initialize parameters to their default values.
     Parameters_();
@@ -411,11 +409,17 @@ private:
   {
     return S_.y_[ elem ];
   }
-double
-get_s_NMDA_pre_() const
-{
-  return S_.s_NMDA_pre;
-}
+  double
+  get_s_NMDA_() const
+  {
+    return S_.y_[ State_::s_NMDA ] + P_.s_NMDA_post_current;
+  }
+
+  double
+  get_s_NMDA_pre_() const
+  {
+    return S_.s_NMDA_pre;
+  }
   double
   get_I_NMDA_() const
   {
