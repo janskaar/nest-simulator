@@ -452,6 +452,8 @@ const Name S( "S" );
 const Name S_act_NMDA( "S_act_NMDA" );
 const Name s_NMDA( "s_NMDA" );
 const Name s_NMDA_pre( "s_NMDA_pre" );
+const Name s_NMDA_pre_clamp( "s_NMDA_pre_clamp" );
+const Name s_NMDA_pre_value( "s_NMDA_pre_value" );
 const Name s_NMDA_post_current( "s_NMDA_post_current" );
 const Name s_AMPA( "s_AMPA" );
 const Name s_GABA( "s_GABA" );

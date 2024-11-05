@@ -282,6 +282,8 @@ private:
 
     double gsl_error_tol; //!< GSL Error Tolerance
     double s_NMDA_post_current; // Value to add to post-synaptic summed variable to
+    bool s_NMDA_pre_clamp;   // Whether to clamp pre-synaptic variable
+    double s_NMDA_pre_value; // Value to clamp the pre-synaptic variable to
 
     //! Initialize parameters to their default values.
     Parameters_();
@@ -398,6 +400,7 @@ private:
     long RefractoryCounts_;
     double k_0; // zeroth order term of jump
     double k_1; // first order term of jump
+    double P_s_NMDA_pre_; // propagator of s_NMDA_pre
   };
 
   // Access functions for UniversalDataLogger -------------------------------

@@ -136,6 +136,8 @@ nest::iaf_bw_2001::Parameters_::Parameters_()
   , conc_Mg2( 1 )         // mM
   , gsl_error_tol( 1e-3 )
   , s_NMDA_post_current( 0 )
+  , s_NMDA_pre_clamp( false )
+  , s_NMDA_pre_value( 0 )
 {
 }
 
@@ -147,7 +149,6 @@ nest::iaf_bw_2001::State_::State_( const Parameters_& p )
   y_[ s_GABA ] = 0.0;
   y_[ s_NMDA ] = 0.0;
   s_NMDA_pre = 0.0;
-//  s_NMDA_ = 0.0;
   I_NMDA_ = 0.0;
   I_AMPA_ = 0.0;
   I_GABA_ = 0.0;
@@ -161,7 +162,6 @@ nest::iaf_bw_2001::State_::State_( const State_& s )
   y_[ s_GABA ] = s.y_[ s_GABA ];
   y_[ s_NMDA ] = s.y_[ s_NMDA ];
   s_NMDA_pre = s.s_NMDA_pre;
-//  s_NMDA_ = s.s_NMDA_;
   I_NMDA_ = s.I_NMDA_;
   I_AMPA_ = s.I_AMPA_;
   I_GABA_ = s.I_GABA_;
@@ -211,6 +211,8 @@ nest::iaf_bw_2001::Parameters_::get( DictionaryDatum& d ) const
   def< double >( d, names::conc_Mg2, conc_Mg2 );
   def< double >( d, names::gsl_error_tol, gsl_error_tol );
   def< double >( d, names::s_NMDA_post_current, s_NMDA_post_current );
+  def< double >( d, names::s_NMDA_pre_value, s_NMDA_pre_value );
+  def< bool >( d, names::s_NMDA_pre_clamp, s_NMDA_pre_clamp );
 }
 
 void
@@ -233,6 +235,8 @@ nest::iaf_bw_2001::Parameters_::set( const DictionaryDatum& d, Node* node )
   updateValueParam< double >( d, names::conc_Mg2, conc_Mg2, node );
   updateValueParam< double >( d, names::gsl_error_tol, gsl_error_tol, node );
   updateValueParam< double >( d, names::s_NMDA_post_current, s_NMDA_post_current, node );
+  updateValueParam< double >( d, names::s_NMDA_pre_value, s_NMDA_pre_value, node );
+  updateValueParam< bool >( d, names::s_NMDA_pre_clamp, s_NMDA_pre_clamp, node );
 
   if ( V_reset >= V_th )
   {
@@ -407,12 +411,15 @@ nest::iaf_bw_2001::pre_run_hook()
   // since t_ref_ >= 0, this can only fail in error
   assert( V_.RefractoryCounts_ >= 0 );
 
+  const double h = Time::get_resolution().get_ms();
+
   // helper vars
   const double alpha_tau = P_.alpha * P_.tau_rise_NMDA;
   const double tau_rise_tau_dec = P_.tau_rise_NMDA / P_.tau_decay_NMDA;
 
   V_.k_1 = std::expm1( -P_.alpha * P_.tau_rise_NMDA );
   V_.k_0 = std::pow( alpha_tau, tau_rise_tau_dec ) * boost::math::tgamma_lower( 1 - tau_rise_tau_dec, alpha_tau );
+  V_.P_s_NMDA_pre_ = std::exp( -h / P_.tau_decay_NMDA );
 }
 
 /* ---------------------------------------------------------------------------
@@ -461,6 +468,16 @@ nest::iaf_bw_2001::update( Time const& origin, const long from, const long to )
     S_.y_[ State_::s_GABA ] += B_.spikes_[ SynapseTypes::GABA - 1 ].get_value( lag );
     S_.y_[ State_::s_NMDA ] += B_.spikes_[ SynapseTypes::NMDA - 1 ].get_value( lag );
 
+    // Update this every step in order to be able to record it sensibly
+    if ( !P_.s_NMDA_pre_clamp )
+    {
+      S_.s_NMDA_pre = S_.s_NMDA_pre * V_.P_s_NMDA_pre_;
+    }
+    else
+    {
+      S_.s_NMDA_pre = P_.s_NMDA_pre_value;
+    }
+
     if ( S_.r_ )
     {
       // neuron is absolute refractory
@@ -473,21 +490,28 @@ nest::iaf_bw_2001::update( Time const& origin, const long from, const long to )
       S_.r_ = V_.RefractoryCounts_;
       S_.y_[ State_::V_m ] = P_.V_reset;
 
-      // get previous spike time
-      const double t_lastspike = get_spiketime_ms();
-
       // log spike with ArchivingNode
       set_spiketime( Time::step( origin.get_steps() + lag + 1 ) );
 
-      const double t_spike = get_spiketime_ms();
+      SpikeEvent se;
 
       // compute current value of s_NMDA and add NMDA update to spike offset
-      S_.s_NMDA_pre = S_.s_NMDA_pre * exp( -( t_spike - t_lastspike ) / P_.tau_decay_NMDA );
-      const double s_NMDA_delta = V_.k_0 + V_.k_1 * S_.s_NMDA_pre;
-      S_.s_NMDA_pre += s_NMDA_delta;
+      // only if it is not clamped. if it is clamped, the neuron will not send out
+      // any NMDA signal, but rely instead on the s_NMDA_post_offset to be set correctly
+      // in the post-synaptic neurons
+      double s_NMDA_delta;
+      if ( !P_.s_NMDA_pre_clamp )
+      {
+        s_NMDA_delta = V_.k_0 + V_.k_1 * S_.s_NMDA_pre;
+      }
+      else
+      {
+        s_NMDA_delta = 0;
+      }
 
-      SpikeEvent se;
+      S_.s_NMDA_pre += s_NMDA_delta;
       se.set_offset( s_NMDA_delta );
+
       kernel().event_delivery_manager.send( *this, se, lag );
     }
 
