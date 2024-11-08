@@ -499,17 +499,13 @@ nest::iaf_bw_2001::update( Time const& origin, const long from, const long to )
       // only if it is not clamped. if it is clamped, the neuron will not send out
       // any NMDA signal, but rely instead on the s_NMDA_post_offset to be set correctly
       // in the post-synaptic neurons
-      double s_NMDA_delta;
+      const double s_NMDA_delta = V_.k_0 + V_.k_1 * S_.s_NMDA_pre;
+
       if ( !P_.s_NMDA_pre_clamp )
       {
-        s_NMDA_delta = V_.k_0 + V_.k_1 * S_.s_NMDA_pre;
-      }
-      else
-      {
-        s_NMDA_delta = 0;
+        S_.s_NMDA_pre += s_NMDA_delta;
       }
 
-      S_.s_NMDA_pre += s_NMDA_delta;
       se.set_offset( s_NMDA_delta );
 
       kernel().event_delivery_manager.send( *this, se, lag );
