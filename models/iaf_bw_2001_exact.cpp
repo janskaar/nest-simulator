@@ -92,6 +92,7 @@ nest::iaf_bw_2001_exact::Parameters_::Parameters_()
   , alpha( 0.5 )          // 1 / ms
   , conc_Mg2( 1 )         // mM
   , gsl_error_tol( 1e-3 )
+  , method_( "rkf45" )
 {
 }
 
@@ -137,6 +138,7 @@ nest::iaf_bw_2001_exact::Buffers_::Buffers_( iaf_bw_2001_exact& n )
   , e_( nullptr )
   , step_( Time::get_resolution().get_ms() )
   , integration_step_( step_ )
+  , rhs_( nullptr )
 {
   // Initialization of the remaining members is deferred to init_buffers_().
 }
@@ -150,6 +152,7 @@ nest::iaf_bw_2001_exact::Buffers_::Buffers_( const Buffers_&, iaf_bw_2001_exact&
   , e_( nullptr )
   , step_( Time::get_resolution().get_ms() )
   , integration_step_( step_ )
+  , rhs_( nullptr )
 {
   // Initialization of the remaining members is deferred to init_buffers_().
 }
@@ -176,6 +179,7 @@ nest::iaf_bw_2001_exact::Parameters_::get( DictionaryDatum& d ) const
   def< double >( d, names::alpha, alpha );
   def< double >( d, names::conc_Mg2, conc_Mg2 );
   def< double >( d, names::gsl_error_tol, gsl_error_tol );
+  def< std::string>(d, "method", method_);
 }
 
 void
@@ -197,6 +201,7 @@ nest::iaf_bw_2001_exact::Parameters_::set( const DictionaryDatum& d, Node* node 
   updateValueParam< double >( d, names::alpha, alpha, node );
   updateValueParam< double >( d, names::conc_Mg2, conc_Mg2, node );
   updateValueParam< double >( d, names::gsl_error_tol, gsl_error_tol, node );
+  updateValue< std::string>(d, "method", method_);
 
   if ( V_reset >= V_th )
   {
@@ -226,7 +231,7 @@ nest::iaf_bw_2001_exact::Parameters_::set( const DictionaryDatum& d, Node* node 
   {
     throw BadProperty( "The gsl_error_tol must be strictly positive." );
   }
-}
+ }
 
 void
 nest::iaf_bw_2001_exact::State_::get( DictionaryDatum& d ) const
@@ -292,6 +297,8 @@ nest::iaf_bw_2001_exact::~iaf_bw_2001_exact()
     gsl_odeiv_evolve_free( B_.e_ );
   }
 
+  delete[] B_.rhs_;
+
   if ( S_.ode_state_ )
   {
     delete[] S_.ode_state_;
@@ -344,7 +351,18 @@ nest::iaf_bw_2001_exact::init_buffers_()
 
   if ( B_.s_ == nullptr )
   {
-    B_.s_ = gsl_odeiv_step_alloc( gsl_odeiv_step_rkf45, S_.state_vec_size );
+    if ( P_.method_ == "rkf45" )
+    {
+        B_.s_ = gsl_odeiv_step_alloc( gsl_odeiv_step_rkf45, S_.state_vec_size );
+    }
+    else if ( P_.method_ == "rk2" )
+    {
+        B_.s_ = gsl_odeiv_step_alloc( gsl_odeiv_step_rk2, S_.state_vec_size );
+    }
+    else
+    {
+        assert( P_.method_ == "ForwardEuler" );
+    }
   }
   else
   {
@@ -375,6 +393,9 @@ nest::iaf_bw_2001_exact::init_buffers_()
   B_.sys_.params = reinterpret_cast< void* >( this );
   B_.step_ = Time::get_resolution().get_ms();
   B_.integration_step_ = Time::get_resolution().get_ms();
+
+  delete[] B_.rhs_;
+  B_.rhs_ = new double[ S_.state_vec_size ];
 
   B_.I_stim_ = 0.0;
 }
@@ -457,6 +478,8 @@ nest::iaf_bw_2001_exact::update( Time const& origin, const long from, const long
     // enforce setting IntegrationStep to step-t; this is of advantage
     // for a consistent and efficient integration across subsequent
     // simulation intervals
+    if ( P_.method_ != "ForwardEuler" )
+    {
     while ( t < B_.step_ )
     {
       const int status = gsl_odeiv_evolve_apply( B_.e_,
@@ -473,7 +496,21 @@ nest::iaf_bw_2001_exact::update( Time const& origin, const long from, const long
         throw GSLSolverFailure( get_name(), status );
       }
     }
+    }
+    else
+    {
+//        const double xpre = S_.ode_state_[State_::s_NMDA_base];
 
+    iaf_bw_2001_exact_dynamics( 0, S_.ode_state_, B_.rhs_, reinterpret_cast<void *>( this ) );
+    for ( size_t i = 0 ; i < S_.state_vec_size ; ++i )
+    {
+        S_.ode_state_[i] += B_.rhs_[i] * Time::get_resolution().get_ms();
+    }
+//     std::cerr << xpre << "  " << S_.ode_state_[State_::s_NMDA_base] << "   " << S_.ode_state_[State_::s_NMDA_base+1] <<
+//          "   " << rhs[State_::s_NMDA_base] << "   " << rhs[State_::s_NMDA_base+1] << 
+//           std::endl;
+    }
+   
     // add incoming spikes
     S_.ode_state_[ State_::s_AMPA ] += B_.spikes_[ AMPA - 1 ].get_value( lag );
     S_.ode_state_[ State_::s_GABA ] += B_.spikes_[ GABA - 1 ].get_value( lag );

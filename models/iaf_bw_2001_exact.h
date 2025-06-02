@@ -265,7 +265,8 @@ private:
     double conc_Mg2;       //!< Extracellular Magnesium Concentration in mM
 
     double gsl_error_tol; //!< GSL Error Tolerance
-
+    
+    std::string method_; 
     /**
      * Initialize parameters to their default values.
      **/
@@ -375,6 +376,9 @@ private:
      * the first simulation, but not modified before later Simulate calls.
      */
     double I_stim_;
+
+    //! Used locally in update() to hold right-hand-side values for Euler
+    double* rhs_;
   };
 
   // Variables class -------------------------------------------------------
