@@ -13,6 +13,7 @@ aeif_psc_delta_clopath
 amat2_psc_exp
 astrocyte_lr_1994
 bernoulli_synapse
+brian2_poisson_generator
 cm_default
 clopath_synapse
 cont_delay_synapse

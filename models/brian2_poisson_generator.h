@@ -20,8 +20,8 @@
  *
  */
 
-#ifndef POISSON_GENERATOR_H
-#define POISSON_GENERATOR_H
+#ifndef BRIAN2_POISSON_GENERATOR_H
+#define BRIAN2_POISSON_GENERATOR_H
 
 // Includes from nestkernel:
 #include "connection.h"
